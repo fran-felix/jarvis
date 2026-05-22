@@ -9,7 +9,7 @@ from openai import embeddings
 load_dotenv()
 
 
-def load_documents(docs_path="documents"):
+def load_documents(docs_path="data"):
 
   if not os.path.exists(docs_path):
     raise FileNotFoundError(f"The directory {docs_path} does not exist.")
@@ -47,7 +47,7 @@ def load_documents(docs_path="documents"):
 
 def main():
   # Load documents from the "data" directory
-  documents = load_documents(docs_path="documents")
+  documents = load_documents(docs_path="data")
 
 
   # Split documents into smaller chunks
