@@ -1,0 +1,6 @@
+Usando um tal de langchain pro trabalho, pelo visto é bons de usars
+
+langchain langchain-community
+langchain_text_splitters -> chunking
+langchain_openai -> embedding
+langchain_chroma -> database
