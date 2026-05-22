@@ -1,6 +1,6 @@
 import os
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, DirectoryLoader
-from langchain_text_splitters import CharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
@@ -35,24 +35,29 @@ def load_documents(docs_path="data"):
   if len(documents) == 0:
     raise FileNotFoundError(f"The directory {docs_path} is empty, please add files.")
   
-  for i, doc in enumerate(documents[:5]):
-    print(f"\nDocument {i+1}:")
-    print(f"  Source: {doc.metadata['source']}")
-    print(f"  Content length: {len(doc.page_content)} characters")
-    print(f"  Content preview: {doc.page_content[:100]}...")
-    print(f"  metadata: {doc.metadata}")
-  
   return documents
+
+def chunk_documents(documents, chunk_size=800, chunk_overlap=0):
+
+  # Splitting documents into smaller chunks
+  text_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=chunk_size,
+    chunk_overlap=chunk_overlap
+  )
+  
+  chunks = text_splitter.split_documents(documents)
+
+  return chunks
+
 
 
 def main():
+
   # Load documents from the "data" directory
   documents = load_documents(docs_path="data")
 
-
   # Split documents into smaller chunks
-  #text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
-  #split_documents = text_splitter.split_documents(documents)
+  chunks = chunk_documents(documents, chunk_size=800, chunk_overlap=200)
 
   # Create embeddings for the split documents
   #embeddings = OpenAIEmbeddings()
