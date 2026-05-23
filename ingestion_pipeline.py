@@ -1,13 +1,43 @@
 import os
+import unicodedata
 from langchain_community.document_loaders import PyPDFLoader, TextLoader, DirectoryLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
-from openai import embeddings
-from openai import OpenAI
+from pathlib import Path
 
 load_dotenv()
+
+LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
+EMBEDDING_MODEL_NAME = os.getenv(
+  "EMBEDDING_MODEL_NAME",
+  "Qwen3-Embedding-8B-Q5_K_M-GGUF",
+)
+
+
+def normalize_text(text):
+
+  normalized_text = unicodedata.normalize("NFKC", text)
+  normalized_text = normalized_text.replace("\r\n", "\n").replace("\r", "\n")
+  normalized_text = "".join(
+    char
+    for char in normalized_text
+    if char in {"\n", "\t"} or not unicodedata.category(char).startswith("C")
+  )
+
+  return normalized_text
+
+
+def normalize_documents(documents):
+
+  normalized_documents = []
+
+  for document in documents:
+    document.page_content = normalize_text(document.page_content)
+    normalized_documents.append(document)
+
+  return normalized_documents
 
 
 def load_documents(docs_path="data"):
@@ -21,7 +51,7 @@ def load_documents(docs_path="data"):
   pdf_loader = DirectoryLoader(
     path=docs_path,
     glob="*.pdf",
-    loader_cls=PyPDFLoader
+    loader_cls=PyPDFLoader # type: ignore
   )
   documents.extend(pdf_loader.load())
   
@@ -29,14 +59,16 @@ def load_documents(docs_path="data"):
   txt_loader = DirectoryLoader(
     path=docs_path,
     glob="*.txt",
-    loader_cls=TextLoader
+    loader_cls=TextLoader,
+    loader_kwargs={"encoding": "utf-8", "autodetect_encoding": True},
   )
   documents.extend(txt_loader.load())
 
   if len(documents) == 0:
     raise FileNotFoundError(f"The directory {docs_path} is empty, please add files.")
   
-  return documents
+  return normalize_documents(documents)
+
 
 def chunk_documents(documents, chunk_size=800, chunk_overlap=0):
 
@@ -50,9 +82,15 @@ def chunk_documents(documents, chunk_size=800, chunk_overlap=0):
 
   return chunks
 
+
 def create_embedding(chunks, persist_directory="dataset/chroma_db"):
 
-  embedding_model = OpenAIEmbeddings(model='google/gemma-3-12b-it')
+  embedding_model = OpenAIEmbeddings(
+    model=EMBEDDING_MODEL_NAME,
+    base_url=LOCAL_LLM_BASE_URL,
+    api_key=os.getenv("OPENAI_API_KEY", "local"), # type: ignore
+    check_embedding_ctx_length=False,
+  )
 
   vectorstore = Chroma.from_documents(
     documents=chunks,
@@ -72,17 +110,15 @@ def main():
   # Loading documents from the "data" directory
   documents = load_documents(docs_path)
 
-  # Spliting documents into smaller chunks
+  #documents = converter_md()
+
+  #Spliting documents into smaller chunks
   chunks = chunk_documents(documents, chunk_size=800, chunk_overlap=200)
 
   # Creating embeddings for the split documents
-  embeddings = create_embedding(chunks, persist_directory)
+  vectorstore = create_embedding(chunks, persist_directory)
 
-  # Store embeddings in Chroma vector database
-  #chroma_db = Chroma(collection_name="my_collection", embedding_function=embeddings)
-  #chroma_db.add_documents(split_documents, doc_embeddings)
-
-
+  return vectorstore
 
 if __name__ == "__main__":
   main()
