@@ -261,6 +261,7 @@ class JournalDB:
         assert row_id is not None
         return row_id
 
+
     def list_class_schedule(
         self,
         course: Optional[str] = None,
