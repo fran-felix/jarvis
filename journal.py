@@ -356,29 +356,6 @@ def main() -> None:
 
     print("Initializing student journal database at:", journal.db_path)
 
-    # task_id = journal.add_task(
-    #     title="Math test on linear algebra",
-    #     description="Study chapters 3 and 4, past homework problems",
-    #     category="test",
-    #     due_date="2026-06-10",
-    #     course="Linear Algebra",
-    # )
-    # journal.add_task(
-    #     title="History essay draft",
-    #     description="Complete essay draft for modernization of Brazil",
-    #     category="essay",
-    #     due_date="2026-06-15",
-    #     course="History",
-    # )
-    # journal.add_class_session(
-    #     course="Physics",
-    #     day_of_week="Monday",
-    #     start_time="08:00",
-    #     end_time="09:30",
-    #     location="Room 102",
-    #     notes="Chapter 5 review",
-    # )
-
     journal.reset_database()
 
     print("Tasks:")
