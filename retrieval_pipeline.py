@@ -29,17 +29,17 @@ vectorstore = Chroma(
     collection_metadata={"hnsw:space": "cosine"}
 )
 
-query = "o que é uma curva poligonal fechada?"
+query = "what is a chromosome?"
 
-retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+#retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
 
-# retriever = db.as_retriever(
-#     search_type="similarity_score_threshold",
-#     search_kwargs={
-#         "k": 3,
-#         "score_threshold": 0.3
-#     }
-# )
+retriever = vectorstore.as_retriever(
+    search_type="similarity_score_threshold",
+    search_kwargs={
+        "k": 3,
+        "score_threshold": 0.5
+    }
+)
 
 relevant_docs = retriever.invoke(query)
 
