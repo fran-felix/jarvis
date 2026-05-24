@@ -1,0 +1,7 @@
+Tools used:
+Langchain library
+Copilot for most of the code generation and assistent/agent support
+Gemini was also used a few times
+Llama and local AI models
+SQLite for database
+ChromaDB to set up the embedding vector database
