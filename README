@@ -1,4 +1,17 @@
+Autors:
+Francisco Felix de Barros
+Leonardo Loveira Dalla Barba
+
+UV-branch is the up to date branch
+
+Video presentation link: https://drive.google.com/file/d/1pFwznvgbmdMtD73dJm_s_yty1vWUqOEK/view?usp=sharing
+
 Step by step to boot the application:
+We used a local model to process the documents for the embedding
+We also used UV, a python project manager for better handling of our project
+use:
+uv run basic_ui.py
+to run the application
 
 UV instalation guide:
 
