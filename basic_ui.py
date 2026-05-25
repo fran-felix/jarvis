@@ -1,7 +1,5 @@
 from retrieval_pipeline import retrieval_pipeline, close_journal_db
-from journal import JournalDB
-
-tools = [JournalDB.add_task, JournalDB.list_tasks, JournalDB.mark_task_completed, JournalDB.add_class_session, JournalDB.list_class_schedule]
+from journal import JournalDBlist 
 
 # Simple handler for AI agent interaction through the terminal
 
