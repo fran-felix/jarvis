@@ -72,8 +72,11 @@ class JournalDB:
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = Path(db_path or DEFAULT_DB_PATH)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self.connection = sqlite3.connect(self.db_path)
+        # Use check_same_thread=False to allow reuse across threads/contexts
+        self.connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=10.0)
         self.connection.row_factory = sqlite3.Row
+        # Set journal mode to WAL for better concurrency
+        self.connection.execute("PRAGMA journal_mode=WAL")
         self._setup_schema()
 
     def _setup_schema(self) -> None:
@@ -121,9 +124,21 @@ class JournalDB:
         course: Optional[str] = None,
         completed: bool = False,
     ) -> int:
+        
+        """
+        adds task to the journal
+
+        Args:
+            title: title of the task to be added
+            description: field that describes the especifications of the task, can be empty if user does not describe the task
+            category: classification of the task, choose between: "test", "essay", "class", "other"
+            due_date: the due date of the task, write in format: DD/MM/YYYY, can be empty if user does not mention a due date
+            course: which course, subject or project, the task belongs to, ignore if the user does not contextualize the task in hand
+            completed: whether the task has been done or not, by default, a new task beign added should not be completed, but if the user desires, it can be added as already completed
+        """
+
         if category not in TASK_CATEGORIES:
             raise ValueError(f"Category must be one of {TASK_CATEGORIES}")
-
         cursor = self.connection.cursor()
         cursor.execute(
             """
@@ -151,6 +166,14 @@ class JournalDB:
         due_before: Optional[str] = None,
         due_after: Optional[str] = None,
     ) -> List[Task]:
+        
+        """
+        lists all of the user's tasks in the database
+
+        Args:
+            There is no need for arguments, as the function retrieves all tasks without specific selection
+        """
+        
         query = "SELECT * FROM tasks"
         conditions: List[str] = []
         values: List[object] = []
@@ -205,6 +228,12 @@ class JournalDB:
         return cursor.rowcount > 0
 
     def mark_task_completed(self, task_id: int, completed: bool = True) -> bool:
+        """
+        marks a task as completed in the database
+
+        Args:
+            task_id: primary key attribute of the tasks table, if not informed by the user, it should be retrieved from the database with the use of other tools
+        """
         return self.update_task(task_id, completed=completed)
 
     def delete_task(self, task_id: int) -> bool:
@@ -235,6 +264,17 @@ class JournalDB:
         location: Optional[str] = None,
         notes: Optional[str] = None,
     ) -> int:
+        """
+        adds to the journal a class that the user attends weekly. Class sessions cannot overlap with eachother, that is, one cannot have two, or more, classes happening at the same time. This method raises an error if a class session overlaps with another, which cancels the addition entirely
+
+        Args:
+            course: which course the class session belongs to. As this parameter is obligatory, if not informed by the user, complete with the default value: "none"
+            day_of_week: the day of the week in which the class takes place. Should be informed as: "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday" or "Sunday"
+            start_time: the time of the day, in a 24-hour HH:MM format, in which the class begins
+            end_time: the time of the day, in a 24-hour HH:MM format, in which the class ends
+            location: the place in which the class takes place, leave empty if not informed by the user
+            notes: additional notes that the user might want to add, leave empty if the user does not want to attach extra information to the class
+        """
         normalized_day = self._normalize_day_of_week(day_of_week)
         normalized_start = self._parse_time_string(start_time)
         normalized_end = self._parse_time_string(end_time)
@@ -266,6 +306,13 @@ class JournalDB:
         course: Optional[str] = None,
         day_of_week: Optional[str] = None,
     ) -> List[ClassSession]:
+        """
+        retrieves all class tuples from the journal database
+
+        Args:
+            No need for arguments, this function retrieves all classes without specific selection
+        """
+
         query = "SELECT * FROM class_schedule"
         conditions: List[str] = []
         values: List[object] = []
@@ -346,10 +393,6 @@ class JournalDB:
         deleted = cursor.rowcount
         self.connection.commit()
         return deleted
-
-
-
-
 
 def main() -> None:
     journal = JournalDB()
