@@ -1,7 +1,7 @@
 from retrieval_pipeline import retrieval_pipeline, close_journal_db
 from journal import JournalDB
 
-# Simple handler for AI agent interaction through the terminal
+# Simple handler for AI assistant interaction through the terminal
 
 def talk():
   
