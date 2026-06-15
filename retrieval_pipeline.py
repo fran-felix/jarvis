@@ -1,11 +1,13 @@
 import os
 import json
 import re
+from ingestion_pipeline import normalize_documents
+from langchain_community.document_loaders import TextLoader, DirectoryLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings
-from dotenv import load_dotenv
-from langchain_openai import ChatOpenAI
+from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+from dotenv import load_dotenv
 from journal import JournalDB
 
 load_dotenv()
@@ -23,6 +25,7 @@ embedding_model = OpenAIEmbeddings(
     base_url=LOCAL_LLM_BASE_URL,
     api_key=os.getenv("OPENAI_API_KEY", "local"), # type: ignore
     check_embedding_ctx_length=False,
+    chunk_size=256,  # Reduce batch size to prevent token overflow errors
   )
 
 vectorstore = Chroma(
@@ -30,6 +33,18 @@ vectorstore = Chroma(
     embedding_function=embedding_model,
     collection_metadata={"hnsw:space": "cosine"}
 )
+
+# Separate embedding model for skills with smaller batch size
+skills_embedding_model = OpenAIEmbeddings(
+    model=EMBEDDING_MODEL_NAME,
+    base_url=LOCAL_LLM_BASE_URL,
+    api_key=os.getenv("OPENAI_API_KEY", "local"), # type: ignore
+    check_embedding_ctx_length=False,
+    chunk_size=128,  # Smaller batch size specifically for skills to prevent token overflow
+)
+
+# Cache for skills retriever - persists across function calls
+_skills_retriever = None
 
 # Global journal database instance - persists across all function calls
 _journal_db = None
@@ -233,7 +248,94 @@ def execute_tool_call(tool_call):
         traceback.print_exc()
         return {"success": False, "error": error_msg}
 
+def load_skills(docs_path="skills"):
+  """Load and split skills from the skills directory"""
+  if not os.path.exists(docs_path):
+    return []  # Return empty list instead of raising error
+  
+  skills = []
+  
+  # Load MD files
+  txt_loader = DirectoryLoader(
+    path=docs_path,
+    glob="*.md",
+    loader_cls=TextLoader,
+    loader_kwargs={"encoding": "utf-8", "autodetect_encoding": True},
+  )
+  skills.extend(txt_loader.load())
+  
+  if not skills:
+    return []
+  
+  # Normalize documents first
+  normalized_skills = normalize_documents(skills)
+  
+  # Split documents into smaller chunks to avoid token overflow
+  splitter = RecursiveCharacterTextSplitter(
+    chunk_size=400,  # Keep chunks small enough for embedding API
+    chunk_overlap=50,  # Maintain context between chunks
+    separators=["\n\n", "\n", ". ", " ", ""]
+  )
+  
+  split_skills = []
+  for doc in normalized_skills:
+    chunks = splitter.split_text(doc.page_content)
+    for chunk in chunks:
+      from langchain_core.documents import Document
+      split_skills.append(Document(page_content=chunk, metadata=doc.metadata))
+  
+  return split_skills
+
+def create_skills_retriever(docs_path="skills"):
+  """Create a dedicated retriever for skills"""
+  global _skills_retriever
+  
+  # Return cached retriever if it exists
+  if _skills_retriever is not None:
+    return _skills_retriever
+  
+  skills = load_skills(docs_path)
+  
+  if not skills:
+    print("[WARNING] No skills found in skills directory")
+    return None
+  
+  # Create a separate vectorstore for skills with smaller batch size embedding model
+  skills_vectorstore = Chroma.from_documents(
+    documents=skills,
+    embedding=skills_embedding_model,  # Use skills-specific embedding model with chunk_size=128
+    persist_directory="dataset/skills_db",
+    collection_metadata={"hnsw:space": "cosine"}
+  )
+  
+  _skills_retriever = skills_vectorstore.as_retriever(
+    search_type="similarity_score_threshold",
+    search_kwargs={
+      "k": 5,
+      "score_threshold": 0.3  # Lower threshold for skill matching
+    }
+  )
+  
+  return _skills_retriever
+
+def retrieve_relevant_skills(query, skills_retriever=None, docs_path="skills"):
+  """Retrieve skills relevant to the user query"""
+  if skills_retriever is None:
+    skills_retriever = create_skills_retriever(docs_path)
+  
+  if skills_retriever is None:
+    return []
+  
+  try:
+    relevant_skills = skills_retriever.invoke(query)
+    print(f"[DEBUG] Found {len(relevant_skills)} relevant skills")
+    return relevant_skills
+  except Exception as e:
+    print(f"[WARNING] Error retrieving skills: {e}")
+    return []
+
 def retrieval_pipeline(query):
+    # Retrieve relevant documents
     retriever = vectorstore.as_retriever(
         search_type="similarity_score_threshold",
         search_kwargs={
@@ -241,29 +343,44 @@ def retrieval_pipeline(query):
             "score_threshold": 0.5
         }
     )
-
     relevant_docs = retriever.invoke(query)
+    
+    # Retrieve relevant skills based on the user query
+    skills_retriever = create_skills_retriever()
+    relevant_skills = retrieve_relevant_skills(query, skills_retriever)
+    
+    # Format skills for inclusion in the prompt
+    skills_text = ""
+    if relevant_skills:
+        skills_text = "Relevant Skills:\n"
+        for i, skill in enumerate(relevant_skills, 1):
+            skills_text += f"\nSkill {i}:\n{skill.page_content}\n"
+        skills_text += "\n"
+    
     tools_context = format_tools_context()
 
-    combined_input = f"""Using the following documents and available tools, considering what the query is requiring, answer this request : {query}
+    combined_input = f"""Using the following documents, available tools and skills, considering what the query is requiring, answer this request : {query}
 
-{tools_context}
+    {tools_context}
 
-Documents:
-{chr(10).join([f"- {doc.page_content}" for doc in relevant_docs])}
+    {skills_text}
 
-IMPORTANT: When the user is asking you to perform an action (like adding a task, viewing tasks, marking tasks complete, or viewing the schedule), respond with a JSON tool call in this format:
-{{"tool_name": "function_name", "parameters": {{"param1": "value1", "param2": "value2"}}}}
+    Documents:
+    {"\n".join([f"- {doc.page_content}" for doc in relevant_docs])}
 
-For example:
-{{"tool_name": "add_task", "parameters": {{"title": "Study for exam", "category": "test", "due_date": "31/05/2026"}}}}
+    IMPORTANT: When the user is asking you to perform an action (like adding a task, viewing tasks, marking tasks complete, or viewing the schedule), respond with a JSON tool call in this format:
+    {{"tool_name": "function_name", "parameters": {{"param1": "value1", "param2": "value2"}}}}
 
-If the user is asking for information, first try to answer using the documents provided. If you need to use a tool to answer, include the JSON tool call above.
-Only Answer with information provided within the documents, if you cannot answer based on the documents, inform that you could not find the information.
-"""
+    For example:
+    {{"tool_name": "add_task", "parameters": {{"title": "Study for exam", "category": "test", "due_date": "31/05/2026"}}}}
+
+    If the user is asking for information, first try to answer using the documents provided. If you need to use a tool to answer, include the JSON tool call above.
+    Only Answer with information provided within the documents, if you cannot answer based on the documents, inform that you could not find the information.
+    When the user request some kind of help with studies, be in the form of exercises or tutoring, use the skills you deem fit while answering the request.
+    """
 
     model = ChatOpenAI(
-        model="google/gemma-3-12b-it",
+        model=os.getenv("CHAT_MODEL_NAME"),
         api_key=os.getenv("CHAT_API_KEY"),
         base_url=os.getenv("CHAT_BASE_URL")
     )
