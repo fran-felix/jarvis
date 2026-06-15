@@ -102,7 +102,7 @@ def create_embedding(chunks, persist_directory="dataset/chroma_db"):
   return vectorstore
 
 
-def main():
+def ingestion_pipeline():
 
   docs_path="data"
   persist_directory="dataset/chroma_db"
@@ -119,6 +119,3 @@ def main():
   vectorstore = create_embedding(chunks, persist_directory)
 
   return vectorstore
-
-if __name__ == "__main__":
-  main()

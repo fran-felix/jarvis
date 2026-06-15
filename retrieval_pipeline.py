@@ -1,16 +1,19 @@
 import os
 import json
 import re
+from pydantic import SecretStr
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
 from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
+
 from journal import JournalDB
+from ingestion_pipeline import ingestion_pipeline
 
 load_dotenv()
 
-LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
+"""LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
 EMBEDDING_MODEL_NAME = os.getenv(
   "EMBEDDING_MODEL_NAME",
   "Qwen3-Embedding-8B-Q5_K_M-GGUF",
@@ -29,7 +32,7 @@ vectorstore = Chroma(
     persist_directory=persistent_directory,
     embedding_function=embedding_model,
     collection_metadata={"hnsw:space": "cosine"}
-)
+)"""
 
 # Global journal database instance - persists across all function calls
 _journal_db = None
@@ -233,7 +236,18 @@ def execute_tool_call(tool_call):
         traceback.print_exc()
         return {"success": False, "error": error_msg}
 
+
+def _normalize_content(content):
+    if isinstance(content, str):
+        return content
+    try:
+        return json.dumps(content)
+    except TypeError:
+        return str(content)
+
+
 def retrieval_pipeline(query):
+    vectorstore = ingestion_pipeline()
     retriever = vectorstore.as_retriever(
         search_type="similarity_score_threshold",
         search_kwargs={
@@ -261,11 +275,16 @@ For example:
 If the user is asking for information, first try to answer using the documents provided. If you need to use a tool to answer, include the JSON tool call above.
 Only Answer with information provided within the documents, if you cannot answer based on the documents, inform that you could not find the information.
 """
+    
+    model_name = os.getenv("MODEL", "Qwen/Qwen2.5-14B-Instruct-AWQ")
+    chat_api_key = os.getenv("CHAT_API_KEY")
+    openai_api_key = SecretStr(chat_api_key) if chat_api_key is not None else None
+    base_url = os.getenv("CHAT_BASE_URL")
 
     model = ChatOpenAI(
-        model="google/gemma-3-12b-it",
-        api_key=os.getenv("CHAT_API_KEY"),
-        base_url=os.getenv("CHAT_BASE_URL")
+        model=model_name,
+        api_key=openai_api_key,
+        base_url=base_url
     )
 
     messages = [
@@ -274,7 +293,7 @@ Only Answer with information provided within the documents, if you cannot answer
     ]
 
     result = model.invoke(messages)
-    content = result.content
+    content = _normalize_content(result.content)
 
     documents = ""
     for i, doc in enumerate(relevant_docs, 1):
@@ -329,7 +348,7 @@ Please provide a clear, concise, and helpful response in natural language that i
         ]
         
         follow_up_result = model.invoke(follow_up_messages)
-        final_response = follow_up_result.content
+        final_response = _normalize_content(follow_up_result.content)
         
         print(f"[DEBUG] Natural language response generated")
     else:
