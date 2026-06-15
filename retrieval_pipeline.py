@@ -245,9 +245,15 @@ def _normalize_content(content):
     except TypeError:
         return str(content)
 
+# Handler to load vectorstore even without an embedding model (in case you have a database already processed)
+def load_vectorstore(persist_directory="dataset/chroma_db"):
+    if os.path.exists(persist_directory):
+        return Chroma(persist_directory=persist_directory)
+    return ingestion_pipeline()
 
 def retrieval_pipeline(query):
-    vectorstore = ingestion_pipeline()
+    
+    vectorstore = load_vectorstore() # insert directory here if it's another one
     retriever = vectorstore.as_retriever(
         search_type="similarity_score_threshold",
         search_kwargs={
