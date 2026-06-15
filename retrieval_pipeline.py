@@ -245,10 +245,22 @@ def _normalize_content(content):
     except TypeError:
         return str(content)
 
+
+def _get_embedding_function():
+    return OpenAIEmbeddings(
+        model=os.getenv("LOCAL_EMBEDDING_MODEL", "Qwen3-Embedding-8B-Q5_K_M-GGUF"),
+        base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1"),
+        api_key=os.getenv("LOCAL_API_KEY", "local"),  # type: ignore
+        check_embedding_ctx_length=False,
+    )
+
 # Handler to load vectorstore even without an embedding model (in case you have a database already processed)
 def load_vectorstore(persist_directory="dataset/chroma_db"):
     if os.path.exists(persist_directory):
-        return Chroma(persist_directory=persist_directory)
+        return Chroma(
+            persist_directory=persist_directory,
+            embedding_function=_get_embedding_function(),
+        )
     return ingestion_pipeline()
 
 def retrieval_pipeline(query):
