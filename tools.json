@@ -1,0 +1,53 @@
+[
+  {
+      "name": "add_task",
+      "description": "Add a new task to the journal database",
+      "parameters": {
+          "title": "str - Title of the task (required)",
+          "description": "str - Description of the task (optional)",
+          "category": "str - Category: 'test', 'essay', 'class', or 'other' (default: 'other')",
+          "due_date": "str - Due date in format DD/MM/YYYY (optional)",
+          "course": "str - Course or subject name (optional)",
+          "completed": "bool - Whether the task is completed (default: False)"
+      }
+  },
+  {
+      "name": "list_tasks",
+      "description": "Retrieve all tasks from the journal database with optional filtering",
+      "parameters": {
+          "category": "str - Filter by category (optional)",
+          "completed": "bool - Filter by completion status (optional)",
+          "course": "str - Filter by course (optional)",
+          "due_before": "str - Filter tasks due before this date (optional)",
+          "due_after": "str - Filter tasks due after this date (optional)"
+      }
+  },
+  {
+      "name": "mark_task_completed",
+      "description": "Mark a task as completed or incomplete in the database",
+      "parameters": {
+          "task_id": "int - The ID of the task (required)",
+          "completed": "bool - True to mark as completed, False to mark as incomplete (default: True)"
+      }
+  },
+  {
+      "name": "add_class_session",
+      "description": "Add a class session to the weekly schedule. Classes cannot overlap.",
+      "parameters": {
+          "course": "str - Course name (required)",
+          "day_of_week": "str - Day: 'Monday' through 'Sunday' (required)",
+          "start_time": "str - Start time in HH:MM format (required)",
+          "end_time": "str - End time in HH:MM format (required)",
+          "location": "str - Class location (optional)",
+          "notes": "str - Additional notes (optional)"
+      }
+  },
+  {
+      "name": "list_class_schedule",
+      "description": "Retrieve the class schedule with optional filtering",
+      "parameters": {
+          "course": "str - Filter by course (optional)",
+          "day_of_week": "str - Filter by day of week (optional)"
+      }
+  }
+]
