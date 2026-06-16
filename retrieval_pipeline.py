@@ -13,27 +13,6 @@ from ingestion_pipeline import ingestion_pipeline
 
 load_dotenv()
 
-"""LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
-EMBEDDING_MODEL_NAME = os.getenv(
-  "EMBEDDING_MODEL_NAME",
-  "Qwen3-Embedding-8B-Q5_K_M-GGUF",
-)
-
-persistent_directory = "dataset/chroma_db"
-
-embedding_model = OpenAIEmbeddings(
-    model=EMBEDDING_MODEL_NAME,
-    base_url=LOCAL_LLM_BASE_URL,
-    api_key=os.getenv("OPENAI_API_KEY", "local"), # type: ignore
-    check_embedding_ctx_length=False,
-  )
-
-vectorstore = Chroma(
-    persist_directory=persistent_directory,
-    embedding_function=embedding_model,
-    collection_metadata={"hnsw:space": "cosine"}
-)"""
-
 # Global journal database instance - persists across all function calls
 _journal_db = None
 
@@ -52,59 +31,17 @@ def close_journal_db():
         _journal_db = None
 
 # Tool schemas for the model
-TOOLS_SCHEMA = [
-    {
-        "name": "add_task",
-        "description": "Add a new task to the journal database",
-        "parameters": {
-            "title": "str - Title of the task (required)",
-            "description": "str - Description of the task (optional)",
-            "category": "str - Category: 'test', 'essay', 'class', or 'other' (default: 'other')",
-            "due_date": "str - Due date in format DD/MM/YYYY (optional)",
-            "course": "str - Course or subject name (optional)",
-            "completed": "bool - Whether the task is completed (default: False)"
-        }
-    },
-    {
-        "name": "list_tasks",
-        "description": "Retrieve all tasks from the journal database with optional filtering",
-        "parameters": {
-            "category": "str - Filter by category (optional)",
-            "completed": "bool - Filter by completion status (optional)",
-            "course": "str - Filter by course (optional)",
-            "due_before": "str - Filter tasks due before this date (optional)",
-            "due_after": "str - Filter tasks due after this date (optional)"
-        }
-    },
-    {
-        "name": "mark_task_completed",
-        "description": "Mark a task as completed or incomplete in the database",
-        "parameters": {
-            "task_id": "int - The ID of the task (required)",
-            "completed": "bool - True to mark as completed, False to mark as incomplete (default: True)"
-        }
-    },
-    {
-        "name": "add_class_session",
-        "description": "Add a class session to the weekly schedule. Classes cannot overlap.",
-        "parameters": {
-            "course": "str - Course name (required)",
-            "day_of_week": "str - Day: 'Monday' through 'Sunday' (required)",
-            "start_time": "str - Start time in HH:MM format (required)",
-            "end_time": "str - End time in HH:MM format (required)",
-            "location": "str - Class location (optional)",
-            "notes": "str - Additional notes (optional)"
-        }
-    },
-    {
-        "name": "list_class_schedule",
-        "description": "Retrieve the class schedule with optional filtering",
-        "parameters": {
-            "course": "str - Filter by course (optional)",
-            "day_of_week": "str - Filter by day of week (optional)"
-        }
-    }
-]
+
+def load_tools_schema(schema_path=None):
+    """Load tool schema definitions from a JSON file."""
+    if schema_path is None:
+        schema_path = os.path.join(os.path.dirname(__file__), "tools.json")
+    if not os.path.exists(schema_path):
+        raise FileNotFoundError(f"Tool schema file not found: {schema_path}")
+    with open(schema_path, "r", encoding="utf-8") as schema_file:
+        return json.load(schema_file)
+
+TOOLS_SCHEMA = load_tools_schema()
 
 def format_tools_context():
     """Format tool definitions for the model"""
