@@ -203,7 +203,7 @@ notes (optional, str)
 - Classes cannot overlap on the same day
 - System will reject overlapping time slots
 - Times must be in valid 24-hour format
-- Day of week must be in english, translate otherwise
+- Always fill in `day_of_week` field in English. If the user says something other than Monday, Tuesday, Wednesday, Thursday, Friday or Saturday, translate accordingly.
 
 **Return Value:**
 - `session_id` (int) - Unique identifier for the class session
