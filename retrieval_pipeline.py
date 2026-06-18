@@ -399,7 +399,7 @@ def _normalize_content(content):
 def _get_embedding_function():
     return OpenAIEmbeddings(
         model=os.getenv("LOCAL_EMBEDDING_MODEL", "Qwen3-Embedding-8B-Q5_K_M-GGUF"),
-        base_url=os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1"),
+        base_url=os.getenv("LOCAL_LLM_BASE_URL"),
         api_key=os.getenv("LOCAL_API_KEY", "local"),  # type: ignore
         check_embedding_ctx_length=False,
     )
