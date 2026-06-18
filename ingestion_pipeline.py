@@ -5,15 +5,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 from langchain_chroma import Chroma
 from dotenv import load_dotenv
-from pathlib import Path
 
 load_dotenv()
-
-LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
-EMBEDDING_MODEL_NAME = os.getenv(
-  "EMBEDDING_MODEL_NAME",
-  "Qwen3-Embedding-8B-Q5_K_M-GGUF",
-)
 
 
 def normalize_text(text):
@@ -86,9 +79,9 @@ def chunk_documents(documents, chunk_size=800, chunk_overlap=0):
 def create_embedding(chunks, persist_directory="dataset/chroma_db"):
 
   embedding_model = OpenAIEmbeddings(
-    model=EMBEDDING_MODEL_NAME,
-    base_url=LOCAL_LLM_BASE_URL,
-    api_key=os.getenv("OPENAI_API_KEY", "local"), # type: ignore
+    model=os.getenv("LOCAL_EMBEDDING_MODEL", "Qwen3-Embedding-8B-Q5_K_M-GGUF"),
+    base_url=os.getenv("LOCAL_LLM_BASE_URL"),
+    api_key=os.getenv("LOCAL_API_KEY", "local"), # type: ignore
     check_embedding_ctx_length=False,
   )
 
@@ -102,7 +95,7 @@ def create_embedding(chunks, persist_directory="dataset/chroma_db"):
   return vectorstore
 
 
-def main():
+def ingestion_pipeline():
 
   docs_path="data"
   persist_directory="dataset/chroma_db"
@@ -119,6 +112,3 @@ def main():
   vectorstore = create_embedding(chunks, persist_directory)
 
   return vectorstore
-
-if __name__ == "__main__":
-  main()
