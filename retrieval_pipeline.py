@@ -1,6 +1,7 @@
 import os
 import json
 import re
+from datetime import datetime
 from pydantic import SecretStr
 from langchain_chroma import Chroma
 from langchain_openai import OpenAIEmbeddings
@@ -10,7 +11,6 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from journal import JournalDB
 from ingestion_pipeline import ingestion_pipeline
-
 load_dotenv()
 
 """LOCAL_LLM_BASE_URL = os.getenv("LOCAL_LLM_BASE_URL", "http://127.0.0.1:8081/v1")
@@ -103,8 +103,58 @@ TOOLS_SCHEMA = [
             "course": "str - Filter by course (optional)",
             "day_of_week": "str - Filter by day of week (optional)"
         }
+    },
+    {
+        "name": "generate_worksheet",
+        "description": "Generate an educational worksheet on a given topic using retrieved documents. This tool loads the worksheet generation skill instructions and applies them to create a customized worksheet with questions, answer keys, and citations.",
+        "parameters": {
+            "topic": "str - The topic for the worksheet (required)",
+            "difficulty": "str - Difficulty level: 'easy', 'medium', or 'hard' (default: 'medium')",
+            "number_of_questions": "int - Number of questions to generate (default: 10, recommended 5-15)",
+            "include_answer_key": "bool - Whether to include an answer key (default: True)",
+            "include_citations": "bool - Whether to include source citations (default: True)"
+        }
     }
 ]
+
+def load_retrieval_tools_skill():
+    """Load the retrieval-pipeline-tools SKILL.md for system context"""
+    skill_path = "skills/retrieval-pipeline-tools/SKILL.md"
+    try:
+        if os.path.exists(skill_path):
+            with open(skill_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        else:
+            print(f"[WARNING] Retrieval pipeline tools SKILL.md not found at {skill_path}")
+            return ""
+    except Exception as e:
+        print(f"[WARNING] Could not read retrieval pipeline tools SKILL.md: {e}")
+        return ""
+
+def get_current_datetime_context():
+    """Get current date and time in a formatted context for the agent"""
+    now = datetime.now()
+    
+    day_name = now.strftime("%A")
+    date_formatted = now.strftime("%d/%m/%Y")  # DD/MM/YYYY format for task dates
+    time_formatted = now.strftime("%H:%M")      # HH:MM format for class times
+    
+    weekday_number = now.weekday()  # 0=Monday, 6=Sunday
+    week_number = now.isocalendar()[1]
+    
+    context = f"""CURRENT DATE AND TIME CONTEXT:
+- Date: {date_formatted} ({day_name})
+- Time: {time_formatted} (24-hour format)
+- Week Number: {week_number}
+- ISO Weekday: {weekday_number} (0=Monday, 6=Sunday)
+
+IMPORTANT: Use these values when:
+- Creating tasks with due dates (format: DD/MM/YYYY)
+- Adding class sessions (use day name: Monday-Sunday)
+- Setting class times (use 24-hour format: HH:MM)
+- Filtering tasks by date ranges (use DD/MM/YYYY format)"""
+    
+    return context
 
 def format_tools_context():
     """Format tool definitions for the model"""
@@ -226,6 +276,182 @@ def execute_tool_call(tool_call):
                 })
             return {"success": True, "sessions": session_list}
         
+        elif tool_name == "generate_worksheet":
+            topic = parameters.get("topic")
+            if not topic:
+                return {"success": False, "error": "Topic is required for worksheet generation"}
+            
+            # Load the SKILL.md file for worksheet generation instructions
+            skill_path = "skills/generate-worksheet/SKILL.md"
+            skill_instructions = ""
+            
+            try:
+                if os.path.exists(skill_path):
+                    with open(skill_path, 'r', encoding='utf-8') as f:
+                        skill_instructions = f.read()
+                    print(f"[DEBUG] Loaded SKILL.md from {skill_path}")
+                else:
+                    print(f"[WARNING] SKILL.md not found at {skill_path}")
+            except Exception as e:
+                print(f"[WARNING] Could not read SKILL.md: {e}")
+            
+            difficulty = parameters.get("difficulty", "medium")
+            number_of_questions = parameters.get("number_of_questions", 10)
+            include_answer_key = parameters.get("include_answer_key", True)
+            include_citations = parameters.get("include_citations", True)
+            
+            # Retrieve documents for the topic
+            vectorstore = load_vectorstore()
+            retriever = vectorstore.as_retriever(
+                search_type="similarity_score_threshold",
+                search_kwargs={"k": 5, "score_threshold": 0.4}
+            )
+            documents = retriever.invoke(topic)
+            
+            if not documents:
+                return {"success": False, "error": f"No documents found for topic: {topic}"}
+            
+            print(f"[DEBUG] Retrieved {len(documents)} documents for worksheet generation")
+            
+            # Prepare document context
+            doc_context = ""
+            for i, doc in enumerate(documents, 1):
+                source = doc.metadata.get("source", "Unknown") if hasattr(doc, "metadata") else "Unknown"
+                content = doc.page_content if hasattr(doc, "page_content") else str(doc)
+                if len(content) > 1000:
+                    content = content[:1000] + "..."
+                doc_context += f"Document {i} (Source: {source}):\n{content}\n\n"
+            
+            # Define question generation instructions based on difficulty
+            difficulty_instructions = {
+                "easy": f"""Generate {number_of_questions} EASY level questions including:
+- 40% Definition/Recall questions (What, Who, When, Where)
+- 40% True/False statements
+- 20% Simple comprehension questions
+Questions should require direct retrieval from source material.""",
+                
+                "medium": f"""Generate {number_of_questions} MEDIUM level questions including:
+- 30% Recall/Comprehension questions
+- 40% Application and Comparison questions
+- 30% Short answer questions requiring analysis
+Questions should require interpretation and synthesis of information.""",
+                
+                "hard": f"""Generate {number_of_questions} HARD level questions including:
+- 20% Analysis questions (Why, How does this relate)
+- 40% Synthesis questions (combining multiple concepts)
+- 20% Critical thinking questions (What if, evaluate validity)
+- 20% Evaluation questions
+Questions should require higher-order thinking and reasoning.""",
+            }
+            
+            instructions = difficulty_instructions.get(difficulty.lower(), difficulty_instructions["medium"])
+            
+            # Prepare the LLM prompt with SKILL.md guidance
+            prompt = f"""You are an expert educational content creator generating a worksheet. 
+Follow these skill guidelines:
+
+SKILL INSTRUCTIONS:
+{skill_instructions}
+
+---
+
+Now, based on the documents below about "{topic}", generate exactly {number_of_questions} {difficulty} level questions for an educational worksheet.
+
+DOCUMENTS:
+{doc_context}
+
+SPECIFIC INSTRUCTIONS FOR THIS WORKSHEET:
+{instructions}
+
+Generate questions following the format specified in the skill instructions. Ensure all questions are:
+- Based directly on the provided documents
+- Accurate and verifiable
+- Appropriate for {difficulty} level learners
+- Varied in type for better engagement
+
+Format your response with clear Q# labels and structure."""
+            
+            # Generate questions using LLM
+            model_name = os.getenv("MODEL", "Qwen/Qwen2.5-14B-Instruct-AWQ")
+            chat_api_key = os.getenv("CHAT_API_KEY")
+            openai_api_key = SecretStr(chat_api_key) if chat_api_key is not None else None
+            base_url = os.getenv("CHAT_BASE_URL")
+            
+            model = ChatOpenAI(
+                model=model_name,
+                api_key=openai_api_key,
+                base_url=base_url,
+                temperature=0.7
+            )
+            
+            messages = [
+                SystemMessage(content="You are an expert educational content creator. Generate high-quality worksheet questions based on provided documents and skill guidelines. Always base questions on document content and ensure accuracy."),
+                HumanMessage(content=prompt)
+            ]
+            
+            result = model.invoke(messages)
+            questions_response = _normalize_content(result.content)
+            
+            # Format the final worksheet
+            worksheet = []
+            worksheet.append("=" * 65)
+            worksheet.append(f"WORKSHEET: {topic.upper()}")
+            worksheet.append(f"Difficulty Level: {difficulty.capitalize()}")
+            worksheet.append(f"Number of Questions: {number_of_questions}")
+            worksheet.append("=" * 65)
+            worksheet.append("")
+            worksheet.append("QUESTIONS:")
+            worksheet.append("")
+            worksheet.append(questions_response)
+            
+            if include_answer_key:
+                # Generate answer key using skill guidelines
+                answer_prompt = f"""Using the same skill guidelines mentioned before:
+
+SKILL INSTRUCTIONS:
+{skill_instructions}
+
+---
+
+Based on the documents and questions below, generate concise answers for each question following the skill's answer key guidelines.
+
+DOCUMENTS:
+{doc_context}
+
+QUESTIONS:
+{questions_response}
+
+Provide answers following the format specified in the skill instructions. For each answer:
+- Include 1-3 key points that should be covered
+- Reference the source document when applicable
+- Ensure accuracy based on provided documents"""
+                
+                answer_messages = [
+                    SystemMessage(content="You are an expert educator creating answer keys. Provide accurate, concise answers based on provided documents and skill guidelines."),
+                    HumanMessage(content=answer_prompt)
+                ]
+                
+                answer_result = model.invoke(answer_messages)
+                answers_response = _normalize_content(answer_result.content)
+                
+                worksheet.append("")
+                worksheet.append("=" * 65)
+                worksheet.append("ANSWER KEY:")
+                worksheet.append("=" * 65)
+                worksheet.append("")
+                worksheet.append(answers_response)
+            
+            if include_citations:
+                worksheet.append("")
+                worksheet.append("=" * 65)
+                worksheet.append("SOURCES:")
+                worksheet.append("=" * 65)
+                for i, doc in enumerate(documents, 1):
+                    source = doc.metadata.get("source", "Unknown") if hasattr(doc, "metadata") else "Unknown"
+                    worksheet.append(f"Document {i}: {source}")
+            
+            return {"success": True, "worksheet": "\n".join(worksheet), "message": f"Worksheet on '{topic}' generated successfully using skill guidelines"}
+        
         else:
             return {"success": False, "error": f"Unknown tool: {tool_name}"}
     
@@ -276,6 +502,13 @@ def retrieval_pipeline(query):
 
     relevant_docs = retriever.invoke(query)
     tools_context = format_tools_context()
+    
+    # Load the retrieval-pipeline-tools skill for system context
+    tools_skill = load_retrieval_tools_skill()
+    
+    # Get current date and time context
+    datetime_context = get_current_datetime_context()
+    
 
     combined_input = f"""Using the following documents and available tools, considering what the query is requiring, answer this request : {query}
 
@@ -284,11 +517,14 @@ def retrieval_pipeline(query):
 Documents:
 {chr(10).join([f"- {doc.page_content}" for doc in relevant_docs])}
 
-IMPORTANT: When the user is asking you to perform an action (like adding a task, viewing tasks, marking tasks complete, or viewing the schedule), respond with a JSON tool call in this format:
+IMPORTANT: When the user is asking you to perform an action (like adding a task, viewing tasks, marking tasks complete, viewing the schedule, or generating a worksheet), respond with a JSON tool call in this format:
 {{"tool_name": "function_name", "parameters": {{"param1": "value1", "param2": "value2"}}}}
 
 For example:
 {{"tool_name": "add_task", "parameters": {{"title": "Study for exam", "category": "test", "due_date": "31/05/2026"}}}}
+{{"tool_name": "generate_worksheet", "parameters": {{"topic": "Renewable Energy", "difficulty": "medium", "number_of_questions": 10}}}}
+
+For the generate_worksheet tool: The tool will automatically load the skill instructions (SKILL.md) and apply them to generate a high-quality worksheet with questions, answer keys, and citations based on your parameters.
 
 If the user is asking for information, first try to answer using the documents provided. If you need to use a tool to answer, include the JSON tool call above.
 Only Answer with information provided within the documents, if you cannot answer based on the documents, inform that you could not find the information.
@@ -305,8 +541,32 @@ Only Answer with information provided within the documents, if you cannot answer
         base_url=base_url
     )
 
+    # Build system message with tool skill context and datetime awareness
+    system_message = f"""You are a helpful academic assistant named Jarvis that can access a student's journal database. You understand the user's needs and can perform actions using the available tools.
+
+{datetime_context}
+
+---
+
+TOOL USAGE GUIDELINES:
+Please refer to the following comprehensive skill guide for optimal tool usage and understanding:
+
+{tools_skill}
+
+---
+
+Use this skill guide to:
+- Select the appropriate tools for the user's request
+- Understand all available parameters and their requirements
+- Follow best practices for data integrity and efficiency
+- Choose proper filter combinations for efficient queries
+- Generate quality worksheets with appropriate difficulty levels
+- Manage tasks and schedules effectively
+- Always use the current date/time context provided above when creating or filtering tasks and schedules
+"""
+
     messages = [
-        SystemMessage(content="You are a helpful academic assistant that can access a student's journal database. You understand the user's needs and can perform actions using the available tools."),
+        SystemMessage(content=system_message),
         HumanMessage(content=combined_input),
     ]
 
@@ -346,6 +606,9 @@ Only Answer with information provided within the documents, if you cannot answer
                             tool_results_text += f"{key}: {len(value)} items found\n"
                             for item in value[:3]:  # Show first 3 items
                                 tool_results_text += f"  - {item}\n"
+                        elif key == "worksheet" and isinstance(value, str):
+                            # For worksheet, include the full content
+                            tool_results_text += f"{key}:\n{value}\n"
                         else:
                             tool_results_text += f"{key}: {value}\n"
             else:
