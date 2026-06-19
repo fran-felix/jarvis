@@ -11,6 +11,8 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 from journal import JournalDB
 from ingestion_pipeline import ingestion_pipeline
+
+
 load_dotenv()
 
 # Global journal database instance - persists across all function calls
