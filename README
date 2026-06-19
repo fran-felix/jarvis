@@ -23,3 +23,8 @@ Llama and local AI models
 SQLite for database
 ChromaDB to set up the embedding vector database
 Using UV to handle dependencies
+
+
+
+dados.zip tem tanto a pasta com os documentos pro RAG (data) e os bancos de dados já criados (tanto o embedding quanto o bd, mas o software crie de novo se não tiver lá)
+https://drive.google.com/file/d/1qqbd2dyolPVby4Bnl9fmGPpekw7SAGeW/view?usp=sharing
