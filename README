@@ -1,25 +1,38 @@
-Autors:
+Authors:
 Francisco Felix de Barros
 Leonardo Loveira Dalla Barba
 
-UV-branch is the up to date branch
+main branch is finally up to date and with the published version of the assignment!
 
-Video presentation link: https://drive.google.com/file/d/1pFwznvgbmdMtD73dJm_s_yty1vWUqOEK/view?usp=sharing
+Video presentation link (part 1): https://drive.google.com/file/d/1pFwznvgbmdMtD73dJm_s_yty1vWUqOEK/view?usp=sharing
+Video presentation link (part 2):
 
-Step by step to boot the application:
-We used a local model to process the documents for the embedding
-We also used UV, a python project manager for better handling of our project
-use:
-uv run basic_ui.py
-to run the application
+Step by Step guide:
+- Clone the git repository (main branch):
+  git clone https://github.com/fran-felix/jarvis.git
 
-UV instalation guide:
+- Configure .env variables:
+  MODEL, the chat model name
+  CHAT_API_KEY, the chat model api key 
+  CHAT_BASE_URL, the url where the model is hosted
+The AI model was provided through an API, managed by an university laboratory (LIA - Laboratório de Inteligência Artificial)
+  LOCAL_EMBEDDING_MODEL, the embedding model name
+  LOCAL_API_KEY, the embedding model api key
+  LOCAL_LLM_BASE_URL, the url
+These are labelled "LOCAL" because we used a local model to handle embedding creation and maintenance.
+
+- Running the project:
+  We also used UV, a python project manager for better handling of our project. Use "uv run basic_ui.py" to start the application.
+  If handling the project in another manner, just remember to start the project through "basic_ui.py"!
 
 Tools used:
-Langchain library
-Copilot for most of the code generation and assistent/agent support
-Gemini was also used a few times
-Llama and local AI models
-SQLite for database
-ChromaDB to set up the embedding vector database
-Using UV to handle dependencies
+- Langchain library provided the framework for RAG and AI handling
+- Llama and local AI models
+- SQLite for application database
+- ChromaDB for embedding database
+- UV to handle dependencies and set up the project environment
+
+AI tools used:
+- GitHub Copilot for most of the code generation and assistent/agent support
+- Gemini for debugging and information fetching when our problems were way too specific.
+Especially when Copilot's credits were almost over
